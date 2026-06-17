@@ -70,7 +70,9 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 
 ## Troubleshooting
 
-- **No displays detected** — run `ddcutil detect`; check i2c permissions
+- **No displays detected** — run `ddcutil detect`; check i2c permissions on the buses your monitors use (see `I2C bus:` lines in detect output)
+- **`/dev/i2c-0` EACCES in logs** — harmless if brightness changes work. ddcutil probes all I2C buses; your monitors use other buses (e.g. `/dev/i2c-6`). The daemon uses `--bus` per monitor for fast parallel updates. To silence the warning: `sudo chmod g+rw /dev/i2c-0` or add yourself to the `i2c` group ([ddcutil i2c permissions](https://www.ddcutil.com/i2c_permissions))
+- **`failed to set brightness on all displays`** — should not occur with `--bus`-based parallel calls; if it does, run `ddcutil detect` and test `ddcutil --bus N setvcp 10 50 --noverify` for each bus
 - **Service not running** — `journalctl --user -u display-brightness -f`
 - **Slider disabled** — ensure the D-Bus service is active before enabling the extension
 - **Extension missing after install** — restart GNOME Shell (`Alt+F2`, `r`) or log out/in; new extensions are picked up on shell restart
@@ -80,5 +82,6 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 
 - `display-brightnessd` — Go 1.26 session D-Bus service (`org.display.Brightness`)
 - `extension/` — GNOME Quick Settings slider (JavaScript)
-- Auto-detects all DDC/CI displays via `ddcutil detect --brief`
+- Auto-detects all DDC/CI displays via `ddcutil detect --brief` and caches I2C bus numbers
+- Sets brightness in parallel using `ddcutil --bus` (avoids detect-phase clashes from `--display`)
 - Sets the same brightness percentage on every display (normalized per monitor max)

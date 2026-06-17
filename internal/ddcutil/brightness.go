@@ -36,10 +36,10 @@ func parseBrightness(output string) (Brightness, error) {
 	return Brightness{}, fmt.Errorf("parse brightness from %q", output)
 }
 
-// GetBrightness reads VCP 0x10 for a display.
-func (c *Client) GetBrightness(ctx context.Context, display int) (Brightness, error) {
+// GetBrightness reads VCP 0x10 for a monitor on the given I2C bus.
+func (c *Client) GetBrightness(ctx context.Context, bus int) (Brightness, error) {
 	out, err := c.run(ctx,
-		"--display", strconv.Itoa(display),
+		"--bus", strconv.Itoa(bus),
 		"getvcp", "10",
 		"--brief",
 	)
@@ -49,8 +49,8 @@ func (c *Client) GetBrightness(ctx context.Context, display int) (Brightness, er
 	return parseBrightness(out)
 }
 
-// SetBrightnessAbsolute sets VCP 0x10 using a known max value.
-func (c *Client) SetBrightnessAbsolute(ctx context.Context, display int, percent int, max int) error {
+// SetBrightnessAbsolute sets VCP 0x10 using a known max value on the given I2C bus.
+func (c *Client) SetBrightnessAbsolute(ctx context.Context, bus int, percent int, max int) error {
 	if percent < 0 {
 		percent = 0
 	}
@@ -58,12 +58,12 @@ func (c *Client) SetBrightnessAbsolute(ctx context.Context, display int, percent
 		percent = 100
 	}
 	if max <= 0 {
-		return fmt.Errorf("invalid max brightness %d for display %d", max, display)
+		return fmt.Errorf("invalid max brightness %d for bus %d", max, bus)
 	}
 
 	value := (percent*max + 50) / 100
 	_, err := c.run(ctx,
-		"--display", strconv.Itoa(display),
+		"--bus", strconv.Itoa(bus),
 		"setvcp", "10", strconv.Itoa(value),
 		"--noverify",
 	)
@@ -71,12 +71,12 @@ func (c *Client) SetBrightnessAbsolute(ctx context.Context, display int, percent
 }
 
 // SetBrightnessPercent sets VCP 0x10 using a 0-100 percentage of the display max.
-func (c *Client) SetBrightnessPercent(ctx context.Context, display int, percent int) error {
-	b, err := c.GetBrightness(ctx, display)
+func (c *Client) SetBrightnessPercent(ctx context.Context, bus int, percent int) error {
+	b, err := c.GetBrightness(ctx, bus)
 	if err != nil {
 		return err
 	}
-	return c.SetBrightnessAbsolute(ctx, display, percent, b.Max)
+	return c.SetBrightnessAbsolute(ctx, bus, percent, b.Max)
 }
 
 // Percent returns brightness as 0-100 based on current/max.

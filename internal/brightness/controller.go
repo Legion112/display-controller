@@ -20,7 +20,7 @@ type ChangeHandler func(percent int)
 type Controller struct {
 	client   *ddcutil.Client
 	mu       sync.Mutex
-	displays []int
+	displays []ddcutil.Display
 	maxCache map[int]int
 	pending  int
 	timer    *time.Timer
@@ -52,30 +52,31 @@ func (c *Controller) RefreshDisplays(ctx context.Context) ([]int, error) {
 	}
 
 	c.mu.Lock()
-	c.displays = append([]int(nil), displays...)
+	c.displays = append([]ddcutil.Display(nil), displays...)
 	c.maxCache = make(map[int]int)
 	c.mu.Unlock()
 
+	numbers := displayNumbers(displays)
 	if c.verbose {
 		log.Printf("detected displays: %v", displays)
 	}
-	return displays, nil
+	return numbers, nil
 }
 
 // WarmMaxCache reads max brightness for all displays in parallel.
 func (c *Controller) WarmMaxCache(ctx context.Context) {
-	displays := c.GetDisplays()
+	displays := c.getDisplays()
 	var wg sync.WaitGroup
 
 	for _, display := range displays {
 		wg.Go(func() {
-			b, err := c.client.GetBrightness(ctx, display)
+			b, err := c.client.GetBrightness(ctx, display.Bus)
 			if err != nil {
-				log.Printf("warm max cache display %d: %v", display, err)
+				log.Printf("warm max cache display %d (bus %d): %v", display.Number, display.Bus, err)
 				return
 			}
 			c.mu.Lock()
-			c.maxCache[display] = b.Max
+			c.maxCache[display.Bus] = b.Max
 			c.mu.Unlock()
 		})
 	}
@@ -84,14 +85,18 @@ func (c *Controller) WarmMaxCache(ctx context.Context) {
 
 // GetDisplays returns cached display numbers.
 func (c *Controller) GetDisplays() []int {
+	return displayNumbers(c.getDisplays())
+}
+
+func (c *Controller) getDisplays() []ddcutil.Display {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return append([]int(nil), c.displays...)
+	return append([]ddcutil.Display(nil), c.displays...)
 }
 
 // GetBrightness returns the average brightness percent across displays.
 func (c *Controller) GetBrightness(ctx context.Context) (int, error) {
-	displays := c.GetDisplays()
+	displays := c.getDisplays()
 	if len(displays) == 0 {
 		return 0, fmt.Errorf("no displays detected")
 	}
@@ -102,9 +107,9 @@ func (c *Controller) GetBrightness(ctx context.Context) (int, error) {
 
 	for _, display := range displays {
 		wg.Go(func() {
-			b, err := c.client.GetBrightness(ctx, display)
+			b, err := c.client.GetBrightness(ctx, display.Bus)
 			if err != nil {
-				log.Printf("get brightness display %d: %v", display, err)
+				log.Printf("get brightness display %d (bus %d): %v", display.Number, display.Bus, err)
 				return
 			}
 			sumMu.Lock()
@@ -145,7 +150,7 @@ func (c *Controller) SetBrightness(percent int) {
 func (c *Controller) applyPending() {
 	c.mu.Lock()
 	percent := c.pending
-	displays := append([]int(nil), c.displays...)
+	displays := append([]ddcutil.Display(nil), c.displays...)
 	onChange := c.onChange
 	c.mu.Unlock()
 
@@ -177,7 +182,7 @@ func (c *Controller) applyToDisplays(ctx context.Context, percent int) error {
 		percent = 100
 	}
 
-	displays := c.GetDisplays()
+	displays := c.getDisplays()
 	if len(displays) == 0 {
 		return fmt.Errorf("no displays detected")
 	}
@@ -188,7 +193,7 @@ func (c *Controller) applyToDisplays(ctx context.Context, percent int) error {
 	for _, display := range displays {
 		wg.Go(func() {
 			if err := c.setDisplayPercent(ctx, display, percent); err != nil {
-				log.Printf("set brightness display %d to %d%%: %v", display, percent, err)
+				log.Printf("set brightness display %d (bus %d) to %d%%: %v", display.Number, display.Bus, percent, err)
 				failed.Add(1)
 			}
 		})
@@ -201,23 +206,31 @@ func (c *Controller) applyToDisplays(ctx context.Context, percent int) error {
 	return nil
 }
 
-func (c *Controller) setDisplayPercent(ctx context.Context, display int, percent int) error {
-	max := c.cachedMax(display)
+func (c *Controller) setDisplayPercent(ctx context.Context, display ddcutil.Display, percent int) error {
+	max := c.cachedMax(display.Bus)
 	if max <= 0 {
-		b, err := c.client.GetBrightness(ctx, display)
+		b, err := c.client.GetBrightness(ctx, display.Bus)
 		if err != nil {
 			return err
 		}
 		max = b.Max
 		c.mu.Lock()
-		c.maxCache[display] = max
+		c.maxCache[display.Bus] = max
 		c.mu.Unlock()
 	}
-	return c.client.SetBrightnessAbsolute(ctx, display, percent, max)
+	return c.client.SetBrightnessAbsolute(ctx, display.Bus, percent, max)
 }
 
-func (c *Controller) cachedMax(display int) int {
+func (c *Controller) cachedMax(bus int) int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.maxCache[display]
+	return c.maxCache[bus]
+}
+
+func displayNumbers(displays []ddcutil.Display) []int {
+	numbers := make([]int, len(displays))
+	for i, d := range displays {
+		numbers[i] = d.Number
+	}
+	return numbers
 }

@@ -6,27 +6,42 @@ import (
 	"strconv"
 )
 
-var displayLineRE = regexp.MustCompile(`(?m)^Display\s+(\d+)\s*$`)
+// Display identifies a monitor by ddcutil display number and I2C bus.
+type Display struct {
+	Number int
+	Bus    int
+}
 
-// DetectDisplays returns ddcutil display numbers from `ddcutil detect --brief`.
-func (c *Client) DetectDisplays(ctx context.Context) ([]int, error) {
+var displayBlockRE = regexp.MustCompile(`(?ms)^Display\s+(\d+)\s*\n\s*I2C bus:\s+/dev/i2c-(\d+)`)
+
+func parseDetectOutput(out string) []Display {
+	matches := displayBlockRE.FindAllStringSubmatch(out, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	displays := make([]Display, 0, len(matches))
+	for _, m := range matches {
+		number, err1 := strconv.Atoi(m[1])
+		bus, err2 := strconv.Atoi(m[2])
+		if err1 != nil || err2 != nil {
+			continue
+		}
+		displays = append(displays, Display{Number: number, Bus: bus})
+	}
+	return displays
+}
+
+// DetectDisplays returns monitors from `ddcutil detect --brief` with I2C bus numbers.
+func (c *Client) DetectDisplays(ctx context.Context) ([]Display, error) {
 	out, err := c.run(ctx, "detect", "--brief")
 	if err != nil {
 		return nil, err
 	}
 
-	matches := displayLineRE.FindAllStringSubmatch(out, -1)
-	if len(matches) == 0 {
+	displays := parseDetectOutput(out)
+	if len(displays) == 0 {
 		return nil, nil
-	}
-
-	displays := make([]int, 0, len(matches))
-	for _, m := range matches {
-		n, err := strconv.Atoi(m[1])
-		if err != nil {
-			continue
-		}
-		displays = append(displays, n)
 	}
 	return displays, nil
 }
