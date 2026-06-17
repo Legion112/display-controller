@@ -23,11 +23,26 @@ This project adds a Go daemon plus a GNOME Shell extension so you get a slider n
 
 ## Install
 
+First install or after any change (daemon, extension, systemd unit):
+
 ```bash
-./scripts/install.sh
+make deploy
 ```
 
-This builds `~/.local/bin/display-brightnessd`, enables the user systemd service, and installs the GNOME extension.
+This builds `~/.local/bin/display-brightnessd`, installs the GNOME extension and systemd user unit, and restarts the service.
+
+Equivalent to `make install` followed by `make restart`. The underlying script is [`scripts/install.sh`](scripts/install.sh).
+
+## Development
+
+| Command | What it does |
+|---------|--------------|
+| `make deploy` | Build, install binary + extension + systemd unit, restart service |
+| `make build` | Compile to `bin/display-brightnessd` only |
+| `make test` | Run Go tests |
+| `make restart` | Restart user service only |
+
+Daemon changes take effect immediately after `make deploy`. Extension JS changes require a GNOME Shell restart (`Alt+F2`, `r`) to appear in Quick Settings.
 
 ## Manual test
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Called by `make deploy`; service restart is handled by the Makefile, not here.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
