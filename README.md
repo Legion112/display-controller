@@ -19,7 +19,7 @@ This project adds a Go daemon plus a GNOME Shell extension so you get a slider n
 - Ubuntu 24.04+ with GNOME Shell 46
 - `ddcutil` installed and working (`ddcutil detect`)
 - User in the `i2c` group (or equivalent udev rules) for DDC/CI access
-- Go 1.26+ to build (runtime is a single binary)
+- Go 1.26.x to build (minimum 1.26.0; any patch version works; runtime is a single binary)
 
 ## Install
 
@@ -41,6 +41,9 @@ Equivalent to `make install` followed by `make restart`. The underlying script i
 | `make build` | Compile to `bin/display-brightnessd` only |
 | `make test` | Run Go tests |
 | `make restart` | Restart user service only |
+| `make clean-cache` | Clear Go build cache (use if toolchain version mismatch) |
+
+`GOTOOLCHAIN=go1.26.0+auto` is set by the Makefile so any Go 1.26.x patch can be used automatically.
 
 Daemon changes take effect immediately after `make deploy`. Extension JS changes require a GNOME Shell restart (`Alt+F2`, `r`) to appear in Quick Settings.
 
@@ -71,6 +74,7 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 - **Service not running** — `journalctl --user -u display-brightness -f`
 - **Slider disabled** — ensure the D-Bus service is active before enabling the extension
 - **Extension missing after install** — restart GNOME Shell (`Alt+F2`, `r`) or log out/in; new extensions are picked up on shell restart
+- **Go version mismatch** (`compile: version "go1.26.x" does not match go tool version`) — run `make clean-cache && make deploy`
 
 ## Architecture
 

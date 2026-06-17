@@ -11,14 +11,8 @@ EXT_DST="${HOME}/.local/share/gnome-shell/extensions/display-brightness@legion"
 echo "==> Building display-brightnessd"
 mkdir -p "${BIN_DIR}"
 
-GO_BIN="go"
-if [ -x "${HOME}/.local/go1.26/bin/go" ]; then
-    GO_BIN="${HOME}/.local/go1.26/bin/go"
-elif command -v go >/dev/null 2>&1; then
-    GO_BIN="$(command -v go)"
-fi
-
-export GOTOOLCHAIN=auto
+GO_BIN="${GO_BIN:-go}"
+export GOTOOLCHAIN="${GOTOOLCHAIN:-go1.26.0+auto}"
 (cd "${ROOT}" && "${GO_BIN}" build -o "${BIN_DIR}/display-brightnessd" ./cmd/display-brightnessd)
 
 echo "==> Installing systemd user service"

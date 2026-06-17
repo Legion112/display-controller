@@ -1,12 +1,7 @@
-.PHONY: build test deploy install restart
+.PHONY: build test deploy install restart clean-cache
 
-ifneq ($(wildcard $(HOME)/.local/go1.26/bin/go),)
-GO := $(HOME)/.local/go1.26/bin/go
-else
 GO ?= go
-endif
-
-export GOTOOLCHAIN ?= auto
+export GOTOOLCHAIN ?= go1.26.0+auto
 
 build:
 	$(GO) build -o bin/display-brightnessd ./cmd/display-brightnessd
@@ -19,6 +14,9 @@ install:
 
 restart:
 	systemctl --user restart display-brightness.service
+
+clean-cache:
+	$(GO) clean -cache
 
 deploy: install restart
 	@echo "Deploy complete. Restart GNOME Shell (Alt+F2, r) if you changed the extension."
