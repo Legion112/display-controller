@@ -1,0 +1,12 @@
+[Unit]
+Description=External monitor brightness (ddcutil)
+After=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.display.Brightness
+ExecStart=%h/.local/bin/display-brightnessd
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

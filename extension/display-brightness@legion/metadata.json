@@ -1,0 +1,9 @@
+{
+  "uuid": "display-brightness@legion",
+  "name": "Display Brightness",
+  "description": "Control external monitor brightness from Quick Settings",
+  "shell-version": ["46"],
+  "session-modes": ["user"],
+  "type": "module",
+  "version": 1
+}
