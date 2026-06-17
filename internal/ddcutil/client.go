@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os/exec"
-	"sync"
 	"time"
 )
 
@@ -16,7 +15,6 @@ type Client struct {
 	Path    string
 	Timeout time.Duration
 	Verbose bool
-	mu      sync.Mutex
 	log     func(format string, args ...any)
 }
 
@@ -43,9 +41,6 @@ func NewClient(path string, timeout time.Duration, verbose bool) *Client {
 }
 
 func (c *Client) run(ctx context.Context, args ...string) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
 	var lastErr error
 	for attempt := 0; attempt < 5; attempt++ {
 		if attempt > 0 {

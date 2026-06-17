@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/legion/display/internal/ddcutil"
 )
 
 const debounceDelay = 200 * time.Millisecond
-const interDisplayDelay = 150 * time.Millisecond
 
 // ChangeHandler is called after brightness is applied to all displays.
 type ChangeHandler func(percent int)
@@ -62,6 +62,26 @@ func (c *Controller) RefreshDisplays(ctx context.Context) ([]int, error) {
 	return displays, nil
 }
 
+// WarmMaxCache reads max brightness for all displays in parallel.
+func (c *Controller) WarmMaxCache(ctx context.Context) {
+	displays := c.GetDisplays()
+	var wg sync.WaitGroup
+
+	for _, display := range displays {
+		wg.Go(func() {
+			b, err := c.client.GetBrightness(ctx, display)
+			if err != nil {
+				log.Printf("warm max cache display %d: %v", display, err)
+				return
+			}
+			c.mu.Lock()
+			c.maxCache[display] = b.Max
+			c.mu.Unlock()
+		})
+	}
+	wg.Wait()
+}
+
 // GetDisplays returns cached display numbers.
 func (c *Controller) GetDisplays() []int {
 	c.mu.Lock()
@@ -76,17 +96,25 @@ func (c *Controller) GetBrightness(ctx context.Context) (int, error) {
 		return 0, fmt.Errorf("no displays detected")
 	}
 
-	var sum int
-	var ok int
+	var wg sync.WaitGroup
+	var sumMu sync.Mutex
+	var sum, ok int
+
 	for _, display := range displays {
-		b, err := c.client.GetBrightness(ctx, display)
-		if err != nil {
-			log.Printf("get brightness display %d: %v", display, err)
-			continue
-		}
-		sum += b.Percent()
-		ok++
+		wg.Go(func() {
+			b, err := c.client.GetBrightness(ctx, display)
+			if err != nil {
+				log.Printf("get brightness display %d: %v", display, err)
+				return
+			}
+			sumMu.Lock()
+			sum += b.Percent()
+			ok++
+			sumMu.Unlock()
+		})
 	}
+	wg.Wait()
+
 	if ok == 0 {
 		return 0, fmt.Errorf("failed to read brightness from all displays")
 	}
@@ -154,17 +182,20 @@ func (c *Controller) applyToDisplays(ctx context.Context, percent int) error {
 		return fmt.Errorf("no displays detected")
 	}
 
-	var failed int
-	for i, display := range displays {
-		if i > 0 {
-			time.Sleep(interDisplayDelay)
-		}
-		if err := c.setDisplayPercent(ctx, display, percent); err != nil {
-			log.Printf("set brightness display %d to %d%%: %v", display, percent, err)
-			failed++
-		}
+	var wg sync.WaitGroup
+	var failed atomic.Int32
+
+	for _, display := range displays {
+		wg.Go(func() {
+			if err := c.setDisplayPercent(ctx, display, percent); err != nil {
+				log.Printf("set brightness display %d to %d%%: %v", display, percent, err)
+				failed.Add(1)
+			}
+		})
 	}
-	if failed == len(displays) {
+	wg.Wait()
+
+	if int(failed.Load()) == len(displays) {
 		return fmt.Errorf("failed to set brightness on all displays")
 	}
 	return nil
