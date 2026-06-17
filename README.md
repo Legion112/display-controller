@@ -78,10 +78,62 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 - **Extension missing after install** — restart GNOME Shell (`Alt+F2`, `r`) or log out/in; new extensions are picked up on shell restart
 - **Go version mismatch** (`compile: version "go1.26.x" does not match go tool version`) — run `make clean-cache && make deploy`
 
+## How it works
+
+The service has three layers: a GNOME Shell extension (UI), a Go daemon (logic), and `ddcutil` (hardware access).
+
+```mermaid
+flowchart LR
+    UI["GNOME Quick Settings slider"] -->|D-Bus| Daemon["display-brightnessd"]
+    Daemon -->|parallel| D1["ddcutil --bus 6"]
+    Daemon -->|parallel| D2["ddcutil --bus 8"]
+    Daemon -->|parallel| D3["ddcutil --bus 9"]
+    D1 & D2 & D3 --> Monitors["External monitors via DDC/CI"]
+```
+
+### Components
+
+| Part | Role |
+|------|------|
+| `extension/display-brightness@legion/` | Slider in Quick Settings; talks to the daemon over the session D-Bus |
+| `display-brightnessd` | Go 1.26 user service; owns `org.display.Brightness` on the session bus |
+| `ddcutil` | External CLI that sends DDC/CI commands over I2C to each monitor |
+
+The daemon is started by a systemd user unit (`display-brightness.service`) and registers the bus name `org.display.Brightness`.
+
+### Startup
+
+1. The daemon runs `ddcutil detect --brief` and parses each monitor's display number and I2C bus (e.g. display 1 → `/dev/i2c-6`).
+2. It reads the max brightness (VCP 0x10) for every monitor in parallel and caches it per bus.
+3. If `ddcutil` reports a harmless `/dev/i2c-0` permission warning, the daemon logs it once at startup and continues.
+
+### When you move the slider
+
+1. The extension calls `SetBrightness(percent)` on D-Bus (0–100).
+2. The controller **debounces** rapid changes (200 ms) so dragging the slider does not spawn dozens of `ddcutil` processes.
+3. After debounce, one goroutine per monitor runs `ddcutil --bus N setvcp 10 <value> --noverify` **in parallel**.
+4. Each monitor may have a different hardware max (e.g. 100 vs 80). The daemon converts the requested percent to an absolute value using the cached max for that bus, so all panels show the same relative brightness.
+5. On success, the daemon emits `BrightnessChanged` so the slider stays in sync without polling.
+
+### Why `--bus` instead of `--display`
+
+`ddcutil --display N` re-probes every I2C device on each call. Several such calls in parallel clash during detection and often fail with "Display not found". Targeting `--bus N` talks directly to one `/dev/i2c-N` device, so parallel updates are fast (~0.6 s for three monitors) and reliable.
+
+### D-Bus API
+
+| Method / signal | Description |
+|-----------------|-------------|
+| `GetBrightness()` → `y` | Average brightness 0–100 across all monitors |
+| `SetBrightness(y)` | Set all monitors to the same percent (debounced) |
+| `GetDisplays()` → `as` | Cached ddcutil display numbers |
+| `RefreshDisplays()` → `as` | Re-run detect and return display numbers |
+| `BrightnessChanged(y)` | Emitted after a successful apply |
+
 ## Architecture
 
-- `display-brightnessd` — Go 1.26 session D-Bus service (`org.display.Brightness`)
-- `extension/` — GNOME Quick Settings slider (JavaScript)
-- Auto-detects all DDC/CI displays via `ddcutil detect --brief` and caches I2C bus numbers
-- Sets brightness in parallel using `ddcutil --bus` (avoids detect-phase clashes from `--display`)
-- Sets the same brightness percentage on every display (normalized per monitor max)
+- `cmd/display-brightnessd/` — daemon entry point
+- `internal/brightness/` — display discovery, debounce, parallel apply, max-brightness cache
+- `internal/ddcutil/` — `ddcutil` wrapper (`detect`, `getvcp`, `setvcp`, stderr noise filtering)
+- `internal/dbus/` — session D-Bus service
+- `extension/` — GNOME Shell Quick Settings slider
+- `systemd/display-brightness.service` — user systemd unit (`Type=dbus`)
