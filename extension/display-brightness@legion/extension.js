@@ -101,10 +101,33 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
             Gio.BusNameWatcherFlags.NONE,
             () => {
                 this._setAvailable(true);
-                this._syncBrightness();
+                this._refreshDisplays();
             },
             () => {
                 this._setAvailable(false);
+            }
+        );
+    }
+
+    _refreshDisplays() {
+        Gio.DBus.session.call(
+            BUS_NAME,
+            OBJECT_PATH,
+            INTERFACE,
+            'RefreshDisplays',
+            null,
+            new GLib.VariantType('(as)'),
+            Gio.DBusCallFlags.NONE,
+            -1,
+            null,
+            (conn, result) => {
+                try {
+                    conn.call_finish(result);
+                    this._syncBrightness();
+                } catch (e) {
+                    log(`display-brightness: RefreshDisplays failed: ${e.message}`);
+                    this._setAvailable(false);
+                }
             }
         );
     }

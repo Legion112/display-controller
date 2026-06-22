@@ -70,7 +70,7 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 
 ## Troubleshooting
 
-- **No displays detected** — run `ddcutil detect`; check i2c permissions on the buses your monitors use (see `I2C bus:` lines in detect output)
+- **No displays detected** — run `ddcutil detect`; check i2c permissions on the buses your monitors use (see `I2C bus:` lines in detect output). After reboot monitors may not be ready when the daemon starts; it retries detect for ~30s, then again on the next slider move or `RefreshDisplays` D-Bus call
 - **`/dev/i2c-0` EACCES in logs** — harmless if brightness changes work. ddcutil probes all I2C buses; your monitors use other buses (e.g. `/dev/i2c-6`). The daemon uses `--bus` per monitor for fast parallel updates. To silence the warning: `sudo chmod g+rw /dev/i2c-0` or add yourself to the `i2c` group ([ddcutil i2c permissions](https://www.ddcutil.com/i2c_permissions))
 - **`failed to set brightness on all displays`** — should not occur with `--bus`-based parallel calls; if it does, run `ddcutil detect` and test `ddcutil --bus N setvcp 10 50 --noverify` for each bus
 - **Service not running** — `journalctl --user -u display-brightness -f`
@@ -103,9 +103,10 @@ The daemon is started by a systemd user unit (`display-brightness.service`) and 
 
 ### Startup
 
-1. The daemon runs `ddcutil detect --brief` and parses each monitor's display number and I2C bus (e.g. display 1 → `/dev/i2c-6`).
-2. It reads the max brightness (VCP 0x10) for every monitor in parallel and caches it per bus.
-3. If `ddcutil` reports a harmless `/dev/i2c-0` permission warning, the daemon logs it once at startup and continues.
+1. The daemon runs `ddcutil detect --brief` with retries (monitors may not respond immediately after boot) and parses each monitor's display number and I2C bus (e.g. display 1 → `/dev/i2c-6`).
+2. If startup detect finds nothing, the daemon retries on the next brightness change or when the extension calls `RefreshDisplays`.
+3. It reads the max brightness (VCP 0x10) for every monitor in parallel and caches it per bus.
+4. If `ddcutil` reports a harmless `/dev/i2c-0` permission warning, the daemon logs it once at startup and continues.
 
 ### When you move the slider
 
