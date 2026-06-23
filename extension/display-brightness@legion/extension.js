@@ -8,6 +8,9 @@ const BUS_NAME = 'org.display.Brightness';
 const OBJECT_PATH = '/org/display/Brightness';
 const INTERFACE = 'org.display.Brightness';
 
+const SYNC_RETRY_INTERVAL_SEC = 3;
+const SYNC_RETRY_MAX = 10;
+
 const DisplayBrightnessIndicator = GObject.registerClass(
 class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
     _init() {
@@ -15,6 +18,8 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
 
         this._updating = false;
         this._serviceAvailable = false;
+        this._syncRetries = 0;
+        this._syncRetrySource = null;
 
         this._slider = new QuickSettings.QuickSlider();
         this._slider.iconName = 'display-brightness-symbolic';
@@ -30,7 +35,6 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
 
         this._watchName();
         this._subscribeSignal();
-        this._syncBrightness();
     }
 
     _getProxyFlags() {
@@ -59,6 +63,30 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
         );
     }
 
+    _clearSyncRetry() {
+        if (this._syncRetrySource) {
+            GLib.source_remove(this._syncRetrySource);
+            this._syncRetrySource = null;
+        }
+        this._syncRetries = 0;
+    }
+
+    _scheduleSyncRetry() {
+        if (this._syncRetrySource || this._syncRetries >= SYNC_RETRY_MAX)
+            return;
+
+        this._syncRetries++;
+        this._syncRetrySource = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT,
+            SYNC_RETRY_INTERVAL_SEC,
+            () => {
+                this._syncRetrySource = null;
+                this._refreshDisplays();
+                return GLib.SOURCE_REMOVE;
+            }
+        );
+    }
+
     _syncBrightness() {
         Gio.DBus.session.call(
             BUS_NAME,
@@ -72,18 +100,23 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
             null,
             (conn, result) => {
                 try {
-                    const [, value] = conn.call_finish(result).deepUnpack();
+                    const [value] = conn.call_finish(result).deepUnpack();
                     this._setSliderValue(value);
                     this._setAvailable(true);
+                    this._clearSyncRetry();
                 } catch (e) {
                     log(`display-brightness: GetBrightness failed: ${e.message}`);
                     this._setAvailable(false);
+                    this._scheduleSyncRetry();
                 }
             }
         );
     }
 
     _setSliderValue(percent) {
+        if (!Number.isFinite(percent))
+            return;
+        percent = Math.max(0, Math.min(100, percent));
         this._updating = true;
         this._slider.slider.value = percent / 100;
         this._updating = false;
@@ -105,6 +138,7 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
             },
             () => {
                 this._setAvailable(false);
+                this._clearSyncRetry();
             }
         );
     }
@@ -127,6 +161,7 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
                 } catch (e) {
                     log(`display-brightness: RefreshDisplays failed: ${e.message}`);
                     this._setAvailable(false);
+                    this._scheduleSyncRetry();
                 }
             }
         );
@@ -143,11 +178,14 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
             (_conn, _sender, _path, _iface, _signal, params) => {
                 const [value] = params.deepUnpack();
                 this._setSliderValue(value);
+                this._setAvailable(true);
+                this._clearSyncRetry();
             }
         );
     }
 
     destroy() {
+        this._clearSyncRetry();
         if (this._signalSub)
             Gio.DBus.session.signal_unsubscribe(this._signalSub);
         if (this._nameWatcher)

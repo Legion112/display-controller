@@ -45,6 +45,15 @@ func (s *Service) emitBrightnessChanged(value byte) {
 	_ = s.conn.Emit(dbus.ObjectPath(ObjectPath), Interface, "BrightnessChanged", value)
 }
 
+// EmitCurrentBrightness reads hardware brightness and notifies subscribers.
+func (s *Service) EmitCurrentBrightness(ctx context.Context) {
+	percent, err := s.controller.GetBrightness(ctx)
+	if err != nil {
+		return
+	}
+	s.emitBrightnessChanged(byte(percent))
+}
+
 // GetBrightness returns average brightness 0-100.
 func (s *Service) GetBrightness() (byte, *dbus.Error) {
 	percent, err := s.controller.GetBrightness(context.Background())

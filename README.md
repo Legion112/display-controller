@@ -74,6 +74,7 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 - **`/dev/i2c-0` EACCES in logs** — harmless if brightness changes work. ddcutil probes all I2C buses; your monitors use other buses (e.g. `/dev/i2c-6`). The daemon uses `--bus` per monitor for fast parallel updates. To silence the warning: `sudo chmod g+rw /dev/i2c-0` or add yourself to the `i2c` group ([ddcutil i2c permissions](https://www.ddcutil.com/i2c_permissions))
 - **`failed to set brightness on all displays`** — should not occur with `--bus`-based parallel calls; if it does, run `ddcutil detect` and test `ddcutil --bus N setvcp 10 50 --noverify` for each bus
 - **Service not running** — `journalctl --user -u display-brightness -f`
+- **Slider missing thumb / wrong position after boot** — the extension syncs from `GetBrightness` or `BrightnessChanged` when the daemon finishes display detection; slow monitors trigger automatic retries. Restart GNOME Shell (`Alt+F2`, `r`) after `make deploy` if the extension was updated
 - **Slider disabled** — ensure the D-Bus service is active before enabling the extension
 - **Extension missing after install** — restart GNOME Shell (`Alt+F2`, `r`) or log out/in; new extensions are picked up on shell restart
 - **Go version mismatch** (`compile: version "go1.26.x" does not match go tool version`) — run `make clean-cache && make deploy`
@@ -103,10 +104,10 @@ The daemon is started by a systemd user unit (`display-brightness.service`) and 
 
 ### Startup
 
-1. The daemon runs `ddcutil detect --brief` with retries (monitors may not respond immediately after boot) and parses each monitor's display number and I2C bus (e.g. display 1 → `/dev/i2c-6`).
-2. If startup detect finds nothing, the daemon retries on the next brightness change or when the extension calls `RefreshDisplays`.
-3. It reads the max brightness (VCP 0x10) for every monitor in parallel and caches it per bus.
-4. If `ddcutil` reports a harmless `/dev/i2c-0` permission warning, the daemon logs it once at startup and continues.
+1. The daemon registers on D-Bus immediately, then runs `ddcutil detect --brief` in the background with retries (monitors may not respond right after boot).
+2. When displays are found, it reads max brightness (VCP 0x10) in parallel, caches per bus, and emits `BrightnessChanged` with the current average.
+3. The extension calls `RefreshDisplays` then `GetBrightness` when the service appears; if monitors are still waking, it retries every 3s (up to 10 times).
+4. If `ddcutil` reports a harmless `/dev/i2c-0` permission warning, the daemon logs it once and continues.
 
 ### When you move the slider
 
@@ -128,7 +129,7 @@ The daemon is started by a systemd user unit (`display-brightness.service`) and 
 | `SetBrightness(y)` | Set all monitors to the same percent (debounced) |
 | `GetDisplays()` → `as` | Cached ddcutil display numbers |
 | `RefreshDisplays()` → `as` | Re-run detect and return display numbers |
-| `BrightnessChanged(y)` | Emitted after a successful apply |
+| `BrightnessChanged(y)` | Emitted after a successful apply or when displays are first detected at startup |
 
 ## Architecture
 
