@@ -42,6 +42,9 @@ Equivalent to `make install` followed by `make restart`. The underlying script i
 | `make test` | Run Go tests |
 | `make restart` | Restart user service only |
 | `make clean-cache` | Clear Go build cache (use if toolchain version mismatch) |
+| `make flash-sensor` | Build and flash VEML7700 Arduino Nano firmware (Rust) |
+| `make lux-read` | Read current illuminance (lux) from Arduino over USB |
+| `make deploy-sensor` | Flash firmware and run lux-read smoke test |
 
 `GOTOOLCHAIN=go1.26.0+auto` is set by the Makefile so any Go 1.26.x patch can be used automatically.
 
@@ -139,3 +142,55 @@ The daemon is started by a systemd user unit (`display-brightness.service`) and 
 - `internal/dbus/` — session D-Bus service
 - `extension/` — GNOME Shell Quick Settings slider
 - `systemd/display-brightness.service` — user systemd unit (`Type=dbus`)
+
+## Ambient light sensor (VEML7700)
+
+Optional Arduino Nano + VEML7700 module for measuring room illuminance (future auto-brightness).
+
+### Wiring
+
+| VEML7700 | Arduino Nano |
+|----------|--------------|
+| VIN/VCC  | 5V           |
+| GND      | GND          |
+| SDA      | A4           |
+| SCL      | A5           |
+
+### Host toolchain (one-time)
+
+```bash
+sudo apt install gcc-avr avr-libc avrdude libudev-dev
+cargo install ravedude
+rustup toolchain install nightly-2025-04-27 --component rust-src
+```
+
+Add your user to the `dialout` group if serial access fails (`sudo usermod -aG dialout $USER`, then log out/in).
+
+The firmware crate pins Rust nightly via [`firmware/ambient-sensor/rust-toolchain.toml`](firmware/ambient-sensor/rust-toolchain.toml).
+
+### Flash and read
+
+```bash
+# Flash firmware (auto-detects USB port; override with RAVEDUDE_PORT)
+make flash-sensor
+
+# Read current lux (prints integer to stdout)
+make lux-read
+
+# Or specify port explicitly
+LUX_PORT=/dev/ttyUSB0 make lux-read
+./bin/lux-read -port /dev/ttyUSB0
+```
+
+**Serial protocol:** host sends `R\n`, device replies `LUX 123` (57600 baud).
+
+**Bootloader:** if `make flash-sensor` fails to upload, edit [`firmware/ambient-sensor/Ravedude.toml`](firmware/ambient-sensor/Ravedude.toml): change `board = "nano"` to `board = "nano-new"` for Nanos with the newer bootloader (2018+).
+
+Example output:
+
+```bash
+$ make lux-read
+142
+```
+
+Integration with `display-brightnessd` (auto-adjust monitors from lux) is planned for a later iteration; the shared reader lives in [`internal/ambient/`](internal/ambient/).

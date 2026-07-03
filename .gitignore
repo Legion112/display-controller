@@ -1,3 +1,4 @@
 .idea/
 display-brightnessd
 bin/
+firmware/**/target/
