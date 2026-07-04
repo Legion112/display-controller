@@ -43,8 +43,9 @@ Equivalent to `make install` followed by `make restart`. The underlying script i
 | `make restart` | Restart user service only |
 | `make clean-cache` | Clear Go build cache (use if toolchain version mismatch) |
 | `make flash-sensor` | Build and flash VEML7700 Arduino Nano firmware (Rust) |
+| `make sensor-scan` | Flash firmware and print I2C bus scan from serial |
 | `make lux-read` | Read current illuminance (lux) from Arduino over USB |
-| `make deploy-sensor` | Flash firmware and run lux-read smoke test |
+| `make deploy-sensor` | Flash, I2C scan log, and lux-read smoke test |
 
 `GOTOOLCHAIN=go1.26.0+auto` is set by the Makefile so any Go 1.26.x patch can be used automatically.
 
@@ -149,12 +150,15 @@ Optional Arduino Nano + VEML7700 module for measuring room illuminance (future a
 
 ### Wiring
 
-| VEML7700 | Arduino Nano |
-|----------|--------------|
-| VIN/VCC  | 5V           |
-| GND      | GND          |
-| SDA      | A4           |
-| SCL      | A5           |
+| VEML7700 pin | Arduino Nano |
+|--------------|--------------|
+| **VIN**      | 5V           |
+| **GND**      | GND          |
+| **SDA**      | A4           |
+| **SCL**      | A5           |
+| **3VO**      | leave unconnected (3.3 V output from the module) |
+
+Add **4.7 kΩ pull-ups** from SDA and SCL to 5V or **3VO** (required for 400 kHz I2C). The VEML7700 module supports Fast-mode I2C at 400 kHz; the firmware uses that rate.
 
 ### Host toolchain (one-time)
 
@@ -171,18 +175,29 @@ The firmware crate pins Rust nightly via [`firmware/ambient-sensor/rust-toolchai
 ### Flash and read
 
 ```bash
-# Flash firmware (auto-detects USB port; override with RAVEDUDE_PORT)
-make flash-sensor
+# Flash + I2C scan at boot (shows Found 0x.. addresses)
+RAVEDUDE_PORT=/dev/ttyUSB0 make sensor-scan
 
-# Read current lux (prints integer to stdout)
+# Flash, scan log, then read lux
+RAVEDUDE_PORT=/dev/ttyUSB0 make deploy-sensor
+
+# Read lux only (after firmware is flashed)
 make lux-read
-
-# Or specify port explicitly
-LUX_PORT=/dev/ttyUSB0 make lux-read
-./bin/lux-read -port /dev/ttyUSB0
 ```
 
-**Serial protocol:** host sends `R\n`, device replies `LUX 123` (57600 baud).
+On boot the firmware prints an **I2C scan** (like Arduino Wire scanner):
+
+```text
+I2C scan
+Found 0x10
+VEML7700 0x10 ok
+scan done
+READY
+```
+
+If the module is missing: `Found none` and `VEML7700 0x10 missing`. Send **`S`** over serial (57600 baud) to rescan without reflashing.
+
+**Serial protocol:** boot scan; `R\n` → `LUX n`; `S` → rescan; errors `ERR init 1`/`2`/`3`, `ERR read`, `ERR no sensor`.
 
 **Bootloader:** if `make flash-sensor` fails to upload, edit [`firmware/ambient-sensor/Ravedude.toml`](firmware/ambient-sensor/Ravedude.toml): change `board = "nano"` to `board = "nano-new"` for Nanos with the newer bootloader (2018+).
 

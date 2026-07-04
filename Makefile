@@ -1,4 +1,4 @@
-.PHONY: build test deploy install restart clean-cache flash-sensor build-lux-read lux-read deploy-sensor
+.PHONY: build test deploy install restart clean-cache flash-sensor build-lux-read lux-read deploy-sensor sensor-boot-log sensor-scan
 
 GO ?= go
 export GOTOOLCHAIN ?= go1.26.0+auto
@@ -15,7 +15,12 @@ lux-read: build-lux-read
 flash-sensor:
 	cd firmware/ambient-sensor && cargo run --release
 
-deploy-sensor: flash-sensor lux-read
+sensor-boot-log:
+	python3 scripts/read-sensor-boot.py
+
+sensor-scan: flash-sensor sensor-boot-log
+
+deploy-sensor: flash-sensor sensor-boot-log lux-read
 	@echo "Sensor deploy complete."
 
 test:
