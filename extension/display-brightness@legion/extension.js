@@ -17,6 +17,7 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
         super._init();
 
         this._updating = false;
+        this._dragging = false;
         this._serviceAvailable = false;
         this._syncRetries = 0;
         this._syncRetrySource = null;
@@ -29,6 +30,13 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
                 return;
             const percent = Math.round(this._slider.slider.value * 100);
             this._callMethod('SetBrightness', new GLib.Variant('(y)', [percent]));
+        });
+
+        this._slider.slider.connect('drag-begin', () => {
+            this._dragging = true;
+        });
+        this._slider.slider.connect('drag-end', () => {
+            this._dragging = false;
         });
 
         this.quickSettingsItems.push(this._slider);
@@ -177,7 +185,8 @@ class DisplayBrightnessIndicator extends QuickSettings.SystemIndicator {
             Gio.DBusSignalFlags.NONE,
             (_conn, _sender, _path, _iface, _signal, params) => {
                 const [value] = params.deepUnpack();
-                this._setSliderValue(value);
+                if (!this._dragging)
+                    this._setSliderValue(value);
                 this._setAvailable(true);
                 this._clearSyncRetry();
             }

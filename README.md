@@ -74,7 +74,8 @@ go build -o display-brightnessd ./cmd/display-brightnessd
 
 ## Troubleshooting
 
-- **No displays detected** — run `ddcutil detect`; check i2c permissions on the buses your monitors use (see `I2C bus:` lines in detect output). After reboot monitors may not be ready when the daemon starts; it retries detect for ~30s, then again on the next slider move or `RefreshDisplays` D-Bus call
+- **No displays detected** — run `ddcutil detect`; check i2c permissions on the buses your monitors use (see `I2C bus:` lines in detect output). After reboot monitors may not be ready when the daemon starts; it retries detect for ~32s across the full startup window (keeps the largest set seen). Cached lists are refreshed on `RefreshDisplays` or after hard set failures
+- **Slider only changes one monitor** — the daemon cached a partial detect at boot. Run `busctl --user call org.display.Brightness /org/display/Brightness org.display.Brightness RefreshDisplays` or `systemctl --user restart display-brightness.service`, then move the slider again. Check `busctl --user call … GetDisplays` vs `ddcutil detect --brief`
 - **`/dev/i2c-0` EACCES in logs** — harmless if brightness changes work. ddcutil probes all I2C buses; your monitors use other buses (e.g. `/dev/i2c-6`). The daemon uses `--bus` per monitor for fast parallel updates. To silence the warning: `sudo chmod g+rw /dev/i2c-0` or add yourself to the `i2c` group ([ddcutil i2c permissions](https://www.ddcutil.com/i2c_permissions))
 - **`failed to set brightness on all displays`** — should not occur with `--bus`-based parallel calls; if it does, run `ddcutil detect` and test `ddcutil --bus N setvcp 10 50 --noverify` for each bus
 - **Service not running** — `journalctl --user -u display-brightness -f`

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,10 @@ type Client struct {
 	Timeout time.Duration
 	Verbose bool
 	log     func(format string, args ...any)
+
+	// detectMu serializes `ddcutil detect` — concurrent detects contend on I2C
+	// and often time out with "signal: killed".
+	detectMu sync.Mutex
 }
 
 // NewClient returns a ddcutil client using path or "ddcutil" from PATH.

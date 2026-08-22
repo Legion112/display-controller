@@ -34,6 +34,9 @@ func parseDetectOutput(out string) []Display {
 
 // DetectDisplays returns monitors from `ddcutil detect --brief` with I2C bus numbers.
 func (c *Client) DetectDisplays(ctx context.Context) ([]Display, error) {
+	c.detectMu.Lock()
+	defer c.detectMu.Unlock()
+
 	out, err := c.run(ctx, "detect", "--brief")
 	if err != nil {
 		return nil, err

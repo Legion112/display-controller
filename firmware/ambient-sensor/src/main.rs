@@ -19,7 +19,7 @@ use panic_halt as _;
 use unwrap_infallible::UnwrapInfallible;
 use veml7700::{Gain, IntegrationTime, Veml7700};
 
-const I2C_HZ: u32 = 400_000;
+const I2C_HZ: u32 = 100_000;
 const VEML7700_ADDR: u8 = 0x10;
 
 #[arduino_hal::entry]
@@ -78,17 +78,17 @@ fn main() -> ! {
 }
 
 fn scan_i2c<W: ufmt::uWrite>(i2c: &mut I2c, serial: &mut W) {
-    let _ = ufmt::uwriteln!(serial, "I2C scan\r");
-    let mut count = 0u8;
-    for addr in 1u8..127u8 {
-        if I2cBus::write(i2c, addr, &[]).is_ok() {
-            let _ = ufmt::uwriteln!(serial, "Found 0x{:x}\r", addr);
-            count += 1;
-        }
-    }
-    if count == 0 {
-        let _ = ufmt::uwriteln!(serial, "Found none\r");
-    }
+    // let _ = ufmt::uwriteln!(serial, "I2C scan\r");
+    // let mut count = 0u8;
+    // for addr in 1u8..127u8 {
+    //     if I2cBus::write(i2c, addr, &[]).is_ok() {
+    //         let _ = ufmt::uwriteln!(serial, "Found 0x{:x}\r", addr);
+    //         count += 1;
+    //     }
+    // }
+    // if count == 0 {
+    //     let _ = ufmt::uwriteln!(serial, "Found none\r");
+    // }
     if I2cBus::write(i2c, VEML7700_ADDR, &[]).is_ok() {
         let _ = ufmt::uwriteln!(serial, "VEML7700 0x10 ok\r");
     } else {

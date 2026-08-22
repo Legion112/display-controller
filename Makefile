@@ -1,7 +1,7 @@
 .PHONY: build test deploy install restart clean-cache flash-sensor build-lux-read lux-read deploy-sensor sensor-boot-log sensor-scan
-
 GO ?= go
 export GOTOOLCHAIN ?= go1.26.0+auto
+export RAVEDUDE_PORT = /dev/ttyUSB0
 
 build:
 	$(GO) build -o bin/display-brightnessd ./cmd/display-brightnessd

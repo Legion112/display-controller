@@ -14,6 +14,7 @@ import (
 const debounceDelay = 200 * time.Millisecond
 
 // Startup retry delays when monitors may not be ready yet after boot.
+// These are cumulative waits before each attempt (full window ~32s).
 var startupDetectDelays = []time.Duration{
 	0,
 	2 * time.Second,
@@ -27,14 +28,17 @@ type ChangeHandler func(percent int)
 
 // Controller manages display discovery and debounced brightness changes.
 type Controller struct {
-	client   *ddcutil.Client
-	mu       sync.Mutex
-	displays []ddcutil.Display
-	maxCache map[int]int
-	pending  int
-	timer    *time.Timer
-	onChange ChangeHandler
-	verbose  bool
+	client       *ddcutil.Client
+	mu           sync.Mutex
+	displays     []ddcutil.Display
+	maxCache     map[int]int
+	pending      int
+	timer        *time.Timer
+	applying     bool // single-flight: at most one apply loop running
+	onChange     ChangeHandler
+	verbose      bool
+	needsRefresh bool      // set after hard apply failure; next ensureDisplays re-detects
+	lastDetect   time.Time // last successful DetectDisplays that updated or confirmed the cache
 }
 
 // NewController creates a brightness controller.
@@ -54,6 +58,8 @@ func (c *Controller) SetChangeHandler(fn ChangeHandler) {
 }
 
 // RefreshDisplays re-detects DDC/CI displays and warms the max-brightness cache.
+// A successful detect with fewer displays than already cached is ignored so a
+// transient partial scan cannot shrink the working set.
 func (c *Controller) RefreshDisplays(ctx context.Context) ([]int, error) {
 	displays, err := c.client.DetectDisplays(ctx)
 	if err != nil {
@@ -61,11 +67,26 @@ func (c *Controller) RefreshDisplays(ctx context.Context) ([]int, error) {
 	}
 
 	c.mu.Lock()
+	if len(displays) < len(c.displays) {
+		kept := displayNumbers(c.displays)
+		c.needsRefresh = false
+		c.lastDetect = time.Now()
+		c.mu.Unlock()
+		log.Printf("detect returned %d display(s), keeping cached %d: %v", len(displays), len(kept), kept)
+		return kept, nil
+	}
+	grew := len(displays) > len(c.displays) && len(c.displays) > 0
+	oldCache := c.maxCache
 	c.displays = append([]ddcutil.Display(nil), displays...)
-	c.maxCache = make(map[int]int)
+	c.maxCache = mergeMaxCache(oldCache, displays)
+	c.needsRefresh = false
+	c.lastDetect = time.Now()
 	c.mu.Unlock()
 
 	numbers := displayNumbers(displays)
+	if grew {
+		log.Printf("display set grew to %d: %v", len(numbers), numbers)
+	}
 	if len(numbers) > 0 {
 		if c.verbose {
 			log.Printf("detected displays: %v", displays)
@@ -75,12 +96,18 @@ func (c *Controller) RefreshDisplays(ctx context.Context) ([]int, error) {
 	return numbers, nil
 }
 
-// DiscoverAtStartup retries display detection until monitors are available.
+// DiscoverAtStartup retries display detection across the full startup window.
+// Early after boot, ddcutil may report only a subset of monitors; stopping on the
+// first non-empty result leaves later monitors out of the cache permanently.
 func (c *Controller) DiscoverAtStartup(ctx context.Context) {
 	for i, delay := range startupDetectDelays {
 		if delay > 0 {
 			select {
 			case <-ctx.Done():
+				numbers := c.GetDisplays()
+				if len(numbers) > 0 {
+					log.Printf("startup cancelled; keeping %d display(s): %v", len(numbers), numbers)
+				}
 				return
 			case <-time.After(delay):
 			}
@@ -91,11 +118,17 @@ func (c *Controller) DiscoverAtStartup(ctx context.Context) {
 			log.Printf("display detect attempt %d/%d: %v", i+1, len(startupDetectDelays), err)
 			continue
 		}
-		if len(numbers) > 0 {
-			log.Printf("detected %d display(s): %v", len(numbers), numbers)
-			return
+		if len(numbers) == 0 {
+			log.Printf("display detect attempt %d/%d: no displays", i+1, len(startupDetectDelays))
+			continue
 		}
-		log.Printf("display detect attempt %d/%d: no displays", i+1, len(startupDetectDelays))
+		log.Printf("display detect attempt %d/%d: %d display(s): %v", i+1, len(startupDetectDelays), len(numbers), numbers)
+	}
+
+	numbers := c.GetDisplays()
+	if len(numbers) > 0 {
+		log.Printf("detected %d display(s) after startup retries: %v", len(numbers), numbers)
+		return
 	}
 	log.Printf("no displays after startup retries; will retry on next request")
 }
@@ -186,23 +219,54 @@ func (c *Controller) SetBrightness(percent int) {
 
 func (c *Controller) applyPending() {
 	c.mu.Lock()
-	percent := c.pending
-	onChange := c.onChange
+	if c.applying {
+		c.mu.Unlock()
+		return
+	}
+	c.applying = true
 	c.mu.Unlock()
 
-	displays := c.ensureDisplays(context.Background())
-	if len(displays) == 0 {
-		log.Printf("set brightness %d: no displays", percent)
-		return
-	}
+	defer func() {
+		c.mu.Lock()
+		c.applying = false
+		c.mu.Unlock()
+	}()
 
-	if err := c.applyToDisplays(context.Background(), percent); err != nil {
-		log.Printf("set brightness %d%%: %v", percent, err)
-		return
-	}
+	ctx := context.Background()
+	for {
+		c.mu.Lock()
+		percent := c.pending
+		onChange := c.onChange
+		c.mu.Unlock()
 
-	if onChange != nil {
-		onChange(percent)
+		displays := c.ensureDisplays(ctx)
+		if len(displays) == 0 {
+			log.Printf("set brightness %d: no displays", percent)
+			return
+		}
+
+		if err := c.applyToDisplays(ctx, percent); err != nil {
+			log.Printf("set brightness %d%%: %v", percent, err)
+			c.mu.Lock()
+			stale := c.pending != percent
+			c.mu.Unlock()
+			if stale {
+				continue
+			}
+			return
+		}
+
+		c.mu.Lock()
+		stale := c.pending != percent
+		c.mu.Unlock()
+		if stale {
+			continue
+		}
+
+		if onChange != nil {
+			onChange(percent)
+		}
+		return
 	}
 }
 
@@ -224,6 +288,42 @@ func (c *Controller) applyToDisplays(ctx context.Context, percent int) error {
 		return fmt.Errorf("no displays detected")
 	}
 
+	failed := c.setAllDisplays(ctx, displays, percent)
+	if failed == 0 {
+		return nil
+	}
+
+	log.Printf("set brightness: %d/%d displays failed; retrying", failed, len(displays))
+	failed = c.setAllDisplays(ctx, displays, percent)
+	if failed == 0 {
+		return nil
+	}
+
+	if failed == len(displays) {
+		c.mu.Lock()
+		c.needsRefresh = true
+		c.mu.Unlock()
+
+		displays = c.ensureDisplays(ctx)
+		if len(displays) == 0 {
+			return fmt.Errorf("failed to set brightness on all displays")
+		}
+		failed = c.setAllDisplays(ctx, displays, percent)
+		if failed == len(displays) {
+			return fmt.Errorf("failed to set brightness on all displays")
+		}
+	}
+
+	if failed > 0 {
+		c.mu.Lock()
+		c.needsRefresh = true
+		c.mu.Unlock()
+		log.Printf("set brightness: %d/%d displays still failing after retry", failed, len(displays))
+	}
+	return nil
+}
+
+func (c *Controller) setAllDisplays(ctx context.Context, displays []ddcutil.Display, percent int) int {
 	var wg sync.WaitGroup
 	var failed atomic.Int32
 
@@ -236,11 +336,7 @@ func (c *Controller) applyToDisplays(ctx context.Context, percent int) error {
 		})
 	}
 	wg.Wait()
-
-	if int(failed.Load()) == len(displays) {
-		return fmt.Errorf("failed to set brightness on all displays")
-	}
-	return nil
+	return int(failed.Load())
 }
 
 func (c *Controller) setDisplayPercent(ctx context.Context, display ddcutil.Display, percent int) error {
@@ -272,16 +368,29 @@ func displayNumbers(displays []ddcutil.Display) []int {
 	return numbers
 }
 
+func mergeMaxCache(old map[int]int, displays []ddcutil.Display) map[int]int {
+	merged := make(map[int]int, len(displays))
+	for _, d := range displays {
+		if v, ok := old[d.Bus]; ok {
+			merged[d.Bus] = v
+		}
+	}
+	return merged
+}
+
 func (c *Controller) ensureDisplays(ctx context.Context) []ddcutil.Display {
-	displays := c.getDisplays()
-	if len(displays) > 0 {
-		return displays
+	c.mu.Lock()
+	needRefresh := c.needsRefresh || len(c.displays) == 0
+	c.mu.Unlock()
+
+	if !needRefresh {
+		return c.getDisplays()
 	}
 
 	numbers, err := c.RefreshDisplays(ctx)
 	if err != nil {
 		log.Printf("on-demand display detect: %v", err)
-		return nil
+		return c.getDisplays()
 	}
 	if len(numbers) == 0 {
 		return nil
