@@ -12,7 +12,7 @@ import (
 func main() {
 	port := flag.String("port", "", "serial device (default: auto-detect)")
 	baud := flag.Int("baud", 57600, "serial baud rate")
-	timeout := flag.Duration("timeout", 2*time.Second, "read timeout")
+	timeout := flag.Duration("timeout", 5*time.Second, "read timeout")
 	flag.Parse()
 
 	portName := *port

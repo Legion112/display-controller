@@ -38,10 +38,37 @@ func ReadLux(portName string, baud int, timeout time.Duration) (int, error) {
 		return 0, fmt.Errorf("reset input buffer: %w", err)
 	}
 
+	// Opening the port toggles DTR and resets the Nano; wait for boot scan + READY.
+	if err := waitForReady(port, timeout); err != nil {
+		return 0, err
+	}
+	if err := port.ResetInputBuffer(); err != nil {
+		return 0, fmt.Errorf("reset input buffer: %w", err)
+	}
+
 	if _, err := port.Write([]byte("R\n")); err != nil {
 		return 0, fmt.Errorf("write request: %w", err)
 	}
 
+	lux, err := readLuxReply(port, timeout)
+	if err != nil {
+		return 0, err
+	}
+	// After USB DTR reset the first ALS sample can still be 0; retry once.
+	if lux == 0 {
+		time.Sleep(150 * time.Millisecond)
+		if err := port.ResetInputBuffer(); err != nil {
+			return 0, fmt.Errorf("reset input buffer: %w", err)
+		}
+		if _, err := port.Write([]byte("R\n")); err != nil {
+			return 0, fmt.Errorf("write request: %w", err)
+		}
+		return readLuxReply(port, timeout)
+	}
+	return lux, nil
+}
+
+func readLuxReply(port serial.Port, timeout time.Duration) (int, error) {
 	deadline := time.Now().Add(timeout)
 	buf := make([]byte, 128)
 	var line strings.Builder
@@ -73,7 +100,38 @@ func ReadLux(portName string, baud int, timeout time.Duration) (int, error) {
 		return lux, nil
 	}
 
-	return 0, fmt.Errorf("timeout waiting for LUX response from %s", portName)
+	return 0, fmt.Errorf("timeout waiting for LUX response")
+}
+
+func waitForReady(port serial.Port, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	buf := make([]byte, 128)
+	var line strings.Builder
+
+	for time.Now().Before(deadline) {
+		n, err := port.Read(buf)
+		if err != nil {
+			if isSerialTimeout(err) {
+				continue
+			}
+			return fmt.Errorf("read serial: %w", err)
+		}
+		for _, b := range buf[:n] {
+			if b == '\n' || b == '\r' {
+				text := strings.TrimSpace(line.String())
+				line.Reset()
+				if text == "READY" {
+					return nil
+				}
+				if strings.HasPrefix(text, "ERR ") {
+					return fmt.Errorf("device error: %s", text)
+				}
+				continue
+			}
+			line.WriteByte(b)
+		}
+	}
+	return fmt.Errorf("timeout waiting for READY")
 }
 
 func parseLuxLine(raw string) (int, bool) {

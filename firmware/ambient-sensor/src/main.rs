@@ -78,17 +78,17 @@ fn main() -> ! {
 }
 
 fn scan_i2c<W: ufmt::uWrite>(i2c: &mut I2c, serial: &mut W) {
-    // let _ = ufmt::uwriteln!(serial, "I2C scan\r");
-    // let mut count = 0u8;
-    // for addr in 1u8..127u8 {
-    //     if I2cBus::write(i2c, addr, &[]).is_ok() {
-    //         let _ = ufmt::uwriteln!(serial, "Found 0x{:x}\r", addr);
-    //         count += 1;
-    //     }
-    // }
-    // if count == 0 {
-    //     let _ = ufmt::uwriteln!(serial, "Found none\r");
-    // }
+    let _ = ufmt::uwriteln!(serial, "I2C scan\r");
+    let mut count = 0u8;
+    for addr in 1u8..127u8 {
+        if I2cBus::write(i2c, addr, &[]).is_ok() {
+            let _ = ufmt::uwriteln!(serial, "Found 0x{:x}\r", addr);
+            count += 1;
+        }
+    }
+    if count == 0 {
+        let _ = ufmt::uwriteln!(serial, "Found none\r");
+    }
     if I2cBus::write(i2c, VEML7700_ADDR, &[]).is_ok() {
         let _ = ufmt::uwriteln!(serial, "VEML7700 0x10 ok\r");
     } else {
@@ -110,7 +110,11 @@ where
     if sensor.set_gain(Gain::One).is_err() {
         return Err(b'3');
     }
-    arduino_hal::delay_ms(104);
+    // Datasheet: wait at least one full integration after config before ALS is valid.
+    arduino_hal::delay_ms(120);
+    // Discard first sample — often still 0 right after enable.
+    let _ = sensor.read_lux();
+    arduino_hal::delay_ms(120);
     Ok(())
 }
 
