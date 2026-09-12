@@ -2,3 +2,4 @@
 display-brightnessd
 bin/
 firmware/**/target/
+samples
