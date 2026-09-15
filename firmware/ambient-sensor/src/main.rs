@@ -5,9 +5,8 @@
 //!   4.7 kΩ pull-ups on SDA/SCL to 5V (or 3VO) recommended at 400 kHz.
 //!
 //! Serial (57600 baud):
-//!   Boot: I2C scan -> Found 0x.. lines -> READY or ERR init N
+//!   Boot: READY or ERR init N
 //!   R/newline: LUX n | ERR read | ERR no sensor
-//!   S: re-run I2C scan
 
 #![no_std]
 #![no_main]
@@ -20,7 +19,6 @@ use unwrap_infallible::UnwrapInfallible;
 use veml7700::{Gain, IntegrationTime, Veml7700};
 
 const I2C_HZ: u32 = 100_000;
-const VEML7700_ADDR: u8 = 0x10;
 
 #[arduino_hal::entry]
 fn main() -> ! {
@@ -28,14 +26,12 @@ fn main() -> ! {
     let pins = arduino_hal::pins!(dp);
     let mut serial = arduino_hal::default_serial!(dp, pins, 57600);
 
-    let mut i2c = I2c::new(
+    let i2c = I2c::new(
         dp.TWI,
         pins.a4.into_pull_up_input(),
         pins.a5.into_pull_up_input(),
         I2C_HZ,
     );
-
-    scan_i2c(&mut i2c, &mut serial);
 
     let mut sensor = Veml7700::new(i2c);
     let mut ready = match init_sensor(&mut sensor) {
@@ -51,11 +47,6 @@ fn main() -> ! {
 
     loop {
         match serial.read() {
-            Ok(b'S') => {
-                i2c = sensor.destroy();
-                scan_i2c(&mut i2c, &mut serial);
-                sensor = Veml7700::new(i2c);
-            }
             Ok(b) if b == b'R' || b == b'\n' || b == b'\r' => {
                 if !ready {
                     match init_sensor(&mut sensor) {
@@ -75,26 +66,6 @@ fn main() -> ! {
             Err(nb::Error::WouldBlock) => {}
         }
     }
-}
-
-fn scan_i2c<W: ufmt::uWrite>(i2c: &mut I2c, serial: &mut W) {
-    let _ = ufmt::uwriteln!(serial, "I2C scan\r");
-    let mut count = 0u8;
-    for addr in 1u8..127u8 {
-        if I2cBus::write(i2c, addr, &[]).is_ok() {
-            let _ = ufmt::uwriteln!(serial, "Found 0x{:x}\r", addr);
-            count += 1;
-        }
-    }
-    if count == 0 {
-        let _ = ufmt::uwriteln!(serial, "Found none\r");
-    }
-    if I2cBus::write(i2c, VEML7700_ADDR, &[]).is_ok() {
-        let _ = ufmt::uwriteln!(serial, "VEML7700 0x10 ok\r");
-    } else {
-        let _ = ufmt::uwriteln!(serial, "VEML7700 0x10 missing\r");
-    }
-    let _ = ufmt::uwriteln!(serial, "scan done\r");
 }
 
 fn init_sensor<I2C>(sensor: &mut Veml7700<I2C>) -> Result<(), u8>

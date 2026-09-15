@@ -1,4 +1,4 @@
-.PHONY: build test deploy install restart clean-cache flash-sensor build-lux-read lux-read deploy-sensor sensor-boot-log sensor-scan
+.PHONY: build test deploy install restart clean-cache flash-sensor build-lux-read lux-read deploy-sensor sensor-boot-log
 GO ?= go
 export GOTOOLCHAIN ?= go1.26.0+auto
 export RAVEDUDE_PORT = /dev/ttyUSB0
@@ -17,8 +17,6 @@ flash-sensor:
 
 sensor-boot-log:
 	python3 scripts/read-sensor-boot.py
-
-sensor-scan: flash-sensor sensor-boot-log
 
 deploy-sensor: flash-sensor sensor-boot-log lux-read
 	@echo "Sensor deploy complete."

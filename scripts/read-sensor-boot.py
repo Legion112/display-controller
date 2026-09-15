@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read Arduino boot log (I2C scan + status) over serial after reset."""
+"""Read Arduino boot log (READY / ERR init) over serial after reset."""
 
 import os
 import sys
@@ -35,8 +35,7 @@ def main() -> int:
         if line:
             print(line)
             lines.append(line)
-        if line == "scan done" or line.startswith("ERR init") or line == "READY":
-            # read a bit more for trailing READY/ERR after scan
+        if line.startswith("ERR init") or line == "READY":
             time.sleep(0.15)
             while True:
                 extra = port.readline()

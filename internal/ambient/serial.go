@@ -34,11 +34,18 @@ func ReadLux(portName string, baud int, timeout time.Duration) (int, error) {
 	if err := port.SetReadTimeout(200 * time.Millisecond); err != nil {
 		return 0, fmt.Errorf("set read timeout: %w", err)
 	}
+
+	// Pulse DTR so the Nano resets and reprints READY (CH340/FTDI).
+	_ = port.SetDTR(false)
+	time.Sleep(50 * time.Millisecond)
+	_ = port.SetDTR(true)
+	time.Sleep(50 * time.Millisecond)
+
 	if err := port.ResetInputBuffer(); err != nil {
 		return 0, fmt.Errorf("reset input buffer: %w", err)
 	}
 
-	// Opening the port toggles DTR and resets the Nano; wait for boot scan + READY.
+	// Wait for boot init + READY after reset.
 	if err := waitForReady(port, timeout); err != nil {
 		return 0, err
 	}
