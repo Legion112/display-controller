@@ -82,9 +82,7 @@ where
         return Err(b'3');
     }
     // Datasheet: wait at least one full integration after config before ALS is valid.
-    arduino_hal::delay_ms(120);
-    // Discard first sample — often still 0 right after enable.
-    let _ = sensor.read_lux();
+    // First sample after that wait is good; no discard needed.
     arduino_hal::delay_ms(120);
     Ok(())
 }
