@@ -81,9 +81,8 @@ where
     if sensor.set_gain(Gain::One).is_err() {
         return Err(b'3');
     }
-    // Datasheet: wait at least one full integration after config before ALS is valid.
-    // First sample after that wait is good; no discard needed.
-    arduino_hal::delay_ms(120);
+    // No post-config wait: host READY→R latency (and continuous ALS) is enough
+    // for a valid first sample with IT=100ms in practice.
     Ok(())
 }
 
