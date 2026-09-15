@@ -53,6 +53,8 @@ fn main() -> ! {
                         Ok(()) => {
                             ready = true;
                             ufmt::uwriteln!(&mut serial, "READY\r").unwrap_infallible();
+                            // Re-init is followed by an immediate read (no host gap).
+                            arduino_hal::delay_ms(100);
                         }
                         Err(_) => {
                             ufmt::uwriteln!(&mut serial, "ERR no sensor\r").unwrap_infallible();
