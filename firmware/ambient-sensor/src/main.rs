@@ -18,7 +18,7 @@ use panic_halt as _;
 use unwrap_infallible::UnwrapInfallible;
 use veml7700::{Gain, IntegrationTime, Veml7700};
 
-const I2C_HZ: u32 = 100_000;
+const I2C_HZ: u32 = 400_000;
 
 #[arduino_hal::entry]
 fn main() -> ! {

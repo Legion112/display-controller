@@ -158,7 +158,7 @@ Optional Arduino Nano + VEML7700 module for measuring room illuminance (future a
 | **SCL**      | A5           |
 | **3VO**      | leave unconnected (3.3 V output from the module) |
 
-Add **4.7 kΩ pull-ups** from SDA and SCL to 5V or **3VO** (recommended). The firmware runs I2C at 100 kHz.
+Add **4.7 kΩ pull-ups** from SDA and SCL to 5V or **3VO** (required for 400 kHz I2C). The firmware runs I2C at 400 kHz.
 
 ### Host toolchain (one-time)
 
