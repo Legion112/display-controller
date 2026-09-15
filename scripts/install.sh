@@ -25,6 +25,7 @@ systemctl --user enable --now display-brightness.service
 echo "==> Installing GNOME Shell extension"
 mkdir -p "${EXT_DST}"
 install -m 0644 "${EXT_SRC}/extension.js" "${EXT_DST}/extension.js"
+install -m 0644 "${EXT_SRC}/prefs.js" "${EXT_DST}/prefs.js"
 install -m 0644 "${EXT_SRC}/metadata.json" "${EXT_DST}/metadata.json"
 
 if command -v gnome-extensions >/dev/null 2>&1; then
@@ -34,8 +35,12 @@ fi
 if command -v gsettings >/dev/null 2>&1; then
     CURRENT="$(gsettings get org.gnome.shell enabled-extensions)"
     if [[ "${CURRENT}" != *"display-brightness@legion"* ]]; then
-        NEW="$(echo "${CURRENT}" | sed "s/]$/, 'display-brightness@legion']/")"
-        gsettings set org.gnome.shell enabled-extensions "${NEW}"
+        if [[ "${CURRENT}" == "@as []" || "${CURRENT}" == "[]" ]]; then
+            gsettings set org.gnome.shell enabled-extensions "['display-brightness@legion']"
+        else
+            NEW="$(echo "${CURRENT}" | sed "s/]$/, 'display-brightness@legion']/")"
+            gsettings set org.gnome.shell enabled-extensions "${NEW}"
+        fi
     fi
 fi
 

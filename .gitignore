@@ -1,5 +1,5 @@
 .idea/
-display-brightnessd
+/display-brightnessd
 bin/
 firmware/**/target/
 samples

@@ -134,19 +134,31 @@ The daemon is started by a systemd user unit (`display-brightness.service`) and 
 | `GetDisplays()` → `as` | Cached ddcutil display numbers |
 | `RefreshDisplays()` → `as` | Re-run detect and return display numbers |
 | `BrightnessChanged(y)` | Emitted after a successful apply or when displays are first detected at startup |
+| `GetAutoBrightness()` → `b` | Whether lux-based auto brightness is on |
+| `SetAutoBrightness(b)` | Enable/disable auto (persisted) |
+| `GetCurve()` → `a(uu)` | Lux→brightness control points |
+| `SetCurve(a(uu))` | Replace curve (persisted) |
+| `GetLux()` → `u` | Last measured lux (0 if none yet) |
+| `AutoBrightnessChanged(b)` | Auto mode toggled |
+| `LuxChanged(u)` | New lux sample while auto is running |
+
+Auto-brightness config is stored at `~/.config/display-brightness/config.json`.
 
 ## Architecture
 
 - `cmd/display-brightnessd/` — daemon entry point
 - `internal/brightness/` — display discovery, debounce, parallel apply, max-brightness cache
+- `internal/autobrightness/` — lux poll loop, curve apply, hysteresis
+- `internal/config/` — persisted curve + auto flag
+- `internal/ambient/` — serial lux reader (`lux-read` CLI + long-lived daemon reader)
 - `internal/ddcutil/` — `ddcutil` wrapper (`detect`, `getvcp`, `setvcp`, stderr noise filtering)
 - `internal/dbus/` — session D-Bus service
-- `extension/` — GNOME Shell Quick Settings slider
+- `extension/` — GNOME Shell Quick Settings slider, auto toggle, curve prefs
 - `systemd/display-brightness.service` — user systemd unit (`Type=dbus`)
 
 ## Ambient light sensor (VEML7700)
 
-Optional Arduino Nano + VEML7700 module for measuring room illuminance (future auto-brightness).
+Optional Arduino Nano + VEML7700 module for room illuminance and **auto brightness**.
 
 ### Wiring
 
@@ -191,15 +203,15 @@ READY
 
 If init fails: `ERR init 1` / `2` / `3` (enable / integration time / gain).
 
-**Serial protocol:** boot `READY` or `ERR init N`; `R\n` → `LUX n`; errors `ERR read`, `ERR no sensor`.
+**Serial protocol:** boot `READY` or `ERR init N`; `R` → `LUX n`; errors `ERR read`, `ERR no sensor`.
 
 **Bootloader:** if `make flash-sensor` fails to upload, edit [`firmware/ambient-sensor/Ravedude.toml`](firmware/ambient-sensor/Ravedude.toml): change `board = "nano"` to `board = "nano-new"` for Nanos with the newer bootloader (2018+).
 
-Example output:
+### Auto brightness
 
-```bash
-$ make lux-read
-142
-```
+1. Flash the sensor and confirm `make lux-read` works.
+2. `make deploy` (or restart `display-brightness`) so the daemon loads auto support.
+3. In Quick Settings: enable **Auto brightness** (slider locks; daemon follows the curve).
+4. Open **Edit lighting curve…** (toggle menu) or extension Preferences to edit/save the lux→brightness curve.
 
-Integration with `display-brightnessd` (auto-adjust monitors from lux) is planned for a later iteration; the shared reader lives in [`internal/ambient/`](internal/ambient/).
+Disable the Auto toggle to take manual control again. Settings survive daemon restart via `~/.config/display-brightness/config.json`. Optional `port` / `LUX_PORT` overrides serial device detection.
