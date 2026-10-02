@@ -133,6 +133,48 @@ func (m *Manager) SetCurve(points []config.Point) error {
 	return nil
 }
 
+// ReloadConfig re-reads the config file and applies it to the running loop, so
+// a hand-edited config.json takes effect without restarting the daemon. Without
+// this, config is read once at startup and the next SetCurve/SetAuto writes the
+// in-memory copy back over the edit.
+func (m *Manager) ReloadConfig() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+
+	m.mu.Lock()
+	wasAuto := m.cfg.Auto
+	portChanged := m.cfg.Port != cfg.Port
+	m.cfg = cfg
+	// Forget the last applied brightness so the reloaded curve is applied even
+	// when the new target is inside the hysteresis band.
+	m.lastBright = -1
+	lux := m.lastLux
+	onAuto := m.onAuto
+	m.mu.Unlock()
+
+	if portChanged {
+		m.dropReader()
+	}
+	// Start/Stop take the mutex themselves, so they must run unlocked.
+	if cfg.Auto != wasAuto {
+		if onAuto != nil {
+			onAuto(cfg.Auto)
+		}
+		if cfg.Auto {
+			m.Start()
+		} else {
+			m.Stop()
+		}
+	}
+	if cfg.Auto {
+		m.applyLux(lux)
+	}
+	log.Printf("auto-brightness: reloaded config (auto=%v, %d curve points)", cfg.Auto, len(cfg.Curve))
+	return nil
+}
+
 // Start begins the poll loop if auto is enabled (idempotent).
 func (m *Manager) Start() {
 	m.mu.Lock()

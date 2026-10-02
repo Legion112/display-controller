@@ -163,6 +163,17 @@ func (s *Service) SetCurve(points []CurvePoint) *dbus.Error {
 	return nil
 }
 
+// ReloadConfig re-reads config.json from disk and applies it immediately.
+func (s *Service) ReloadConfig() *dbus.Error {
+	if s.auto == nil {
+		return dbus.MakeFailedError(fmt.Errorf("auto-brightness unavailable"))
+	}
+	if err := s.auto.ReloadConfig(); err != nil {
+		return dbus.MakeFailedError(err)
+	}
+	return nil
+}
+
 // GetLux returns the last measured lux (0 if none yet).
 func (s *Service) GetLux() (uint32, *dbus.Error) {
 	if s.auto == nil {
