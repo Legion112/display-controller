@@ -37,7 +37,10 @@ func ValidateCurve(points []Point) error {
 	return nil
 }
 
-// NormalizeCurve sorts by lux and clamps brightness.
+// NormalizeCurve sorts by lux, clamps brightness, and collapses points that
+// share a lux value, keeping the last. A graphical client derives lux from a
+// pixel position, so two control points can round to the same lux; dropping the
+// duplicate keeps such a curve usable instead of failing ValidateCurve.
 func NormalizeCurve(points []Point) []Point {
 	out := append([]Point(nil), points...)
 	for i := range out {
@@ -45,8 +48,16 @@ func NormalizeCurve(points []Point) []Point {
 			out[i].Brightness = 100
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Lux < out[j].Lux })
-	return out
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Lux < out[j].Lux })
+
+	deduped := out[:0]
+	for i, p := range out {
+		if i+1 < len(out) && out[i+1].Lux == p.Lux {
+			continue
+		}
+		deduped = append(deduped, p)
+	}
+	return deduped
 }
 
 // BrightnessForLux maps lux through a piecewise-linear curve (clamped at ends).

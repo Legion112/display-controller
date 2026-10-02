@@ -41,3 +41,48 @@ func TestValidateCurve(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestNormalizeCurveSortsAndClamps(t *testing.T) {
+	got := NormalizeCurve([]Point{
+		{Lux: 200, Brightness: 150},
+		{Lux: 0, Brightness: 10},
+	})
+	want := []Point{{Lux: 0, Brightness: 10}, {Lux: 200, Brightness: 100}}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+}
+
+// A graphical client derives lux from a pixel position, so two control points
+// can round to the same lux. Normalizing must leave a curve ValidateCurve
+// accepts rather than one that is rejected for non-increasing lux.
+func TestNormalizeCurveCollapsesDuplicateLux(t *testing.T) {
+	got := NormalizeCurve([]Point{
+		{Lux: 0, Brightness: 5},
+		{Lux: 4, Brightness: 20},
+		{Lux: 4, Brightness: 30},
+		{Lux: 4, Brightness: 40},
+		{Lux: 50, Brightness: 60},
+	})
+	want := []Point{
+		{Lux: 0, Brightness: 5},
+		{Lux: 4, Brightness: 40}, // last of the run wins
+		{Lux: 50, Brightness: 60},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("got %v want %v", got, want)
+		}
+	}
+	if err := ValidateCurve(got); err != nil {
+		t.Fatalf("normalized curve must validate: %v", err)
+	}
+}
