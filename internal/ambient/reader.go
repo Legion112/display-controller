@@ -10,11 +10,11 @@ import (
 
 // Reader keeps a serial port open for repeated lux polls without USB reset.
 type Reader struct {
-	mu      sync.Mutex
-	port    serial.Port
+	mu       sync.Mutex
+	port     serial.Port
 	portName string
-	baud    int
-	timeout time.Duration
+	baud     int
+	timeout  time.Duration
 }
 
 // NewReader creates a closed reader. Call Open before Read.

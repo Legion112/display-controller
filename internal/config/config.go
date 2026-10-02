@@ -8,18 +8,18 @@ import (
 )
 
 const (
-	DefaultPollMS       = 2000
-	DefaultHysteresis   = 3 // brightness percent points
-	configDirName       = "display-brightness"
-	configFileName      = "config.json"
+	DefaultPollMS     = 2000
+	DefaultHysteresis = 3 // brightness percent points
+	configDirName     = "display-brightness"
+	configFileName    = "config.json"
 )
 
 // Config is persisted daemon state for auto-brightness.
 type Config struct {
-	Auto    bool    `json:"auto"`
-	Curve   []Point `json:"curve"`
-	PollMS  int     `json:"poll_ms"`
-	Port    string  `json:"port"`
+	Auto   bool    `json:"auto"`
+	Curve  []Point `json:"curve"`
+	PollMS int     `json:"poll_ms"`
+	Port   string  `json:"port"`
 	// Hysteresis is minimum brightness change before applying (not always in JSON).
 	Hysteresis int `json:"hysteresis,omitempty"`
 }
