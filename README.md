@@ -139,10 +139,19 @@ The daemon is started by a systemd user unit (`display-brightness.service`) and 
 | `GetCurve()` → `a(uu)` | Lux→brightness control points |
 | `SetCurve(a(uu))` | Replace curve (persisted) |
 | `GetLux()` → `u` | Last measured lux (0 if none yet) |
+| `ReloadConfig()` | Re-read `config.json` from disk and apply it now |
 | `AutoBrightnessChanged(b)` | Auto mode toggled |
 | `LuxChanged(u)` | New lux sample while auto is running |
 
-Auto-brightness config is stored at `~/.config/display-brightness/config.json`.
+Auto-brightness config is stored at `~/.config/display-brightness/config.json`. The daemon
+reads it at startup and keeps it in memory, so a hand edit needs `ReloadConfig` to take effect —
+otherwise the next `SetCurve`/`SetAutoBrightness` writes the in-memory copy back over the edit:
+
+```bash
+gdbus call --session --dest org.display.Brightness \
+  --object-path /org/display/Brightness \
+  --method org.display.Brightness.ReloadConfig
+```
 
 ## Architecture
 
@@ -212,6 +221,16 @@ If init fails: `ERR init 1` / `2` / `3` (enable / integration time / gain).
 1. Flash the sensor and confirm `make lux-read` works.
 2. `make deploy` (or restart `display-brightness`) so the daemon loads auto support.
 3. In Quick Settings: enable **Auto brightness** (slider locks; daemon follows the curve).
-4. Open **Edit lighting curve…** (toggle menu) or extension Preferences to edit/save the lux→brightness curve.
+4. Open **Edit lighting curve…** (toggle menu) or extension Preferences to edit the lux→brightness curve.
+
+In the curve editor, drag a point to move it, click empty space to add one, and right-click a
+middle point to remove it. Every edit is applied and persisted as soon as you release the mouse —
+the **Re-apply curve** button is only there to re-send a curve after a failure.
+
+The lux axis is logarithmic, because a linear 0–1000 axis squeezed everything below 50 lux — where
+a lit indoor room actually sits — into a few pixels. The leftmost point is anchored at 0 lux since
+the curve has to define a brightness for darkness; every other point moves freely. **Axis maximum**
+sets the bright end of the graph: raise it to place points above the current range, lower it to
+spread out a dim room. Points above a lowered maximum are clamped into range.
 
 Disable the Auto toggle to take manual control again. Settings survive daemon restart via `~/.config/display-brightness/config.json`. Optional `port` / `LUX_PORT` overrides serial device detection.
